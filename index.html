@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background-color: #000; /* 黑色背景 */
+      color: #fff; /* 文字默认白色 */
+    }
+    svg {
+      display: block;
+      margin: 20px auto; /* 上下留白，确保地图居中 */
+    }
+    .tooltip {
+      position: absolute;
+      background-color: rgba(50, 50, 50, 0.8);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 5px;
+      font-size: 12px;
+      pointer-events: none;
+      display: none;
+    }
+    .legend-container {
+      display: flex;
+      flex-direction: column;
+      gap: 6px; /* 放大间距 */
+      background: #333; /* 深灰背景 */
+      color: white;
+      padding: 10px; /* 增加填充 */
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    }
+    .legend-box {
+      display: flex;
+      align-items: center;
+      gap: 10px; /* 放大间距 */
+    }
+    .legend-box div {
+      width: 15px; /* 放大方块 */
+      height: 15px;
+    }
+    text {
+      fill: white;
+    }
+  </style>
+</head>
+<body>
+<div class="tooltip"></div>
+<svg></svg>
+<script src="https://d3js.org/d3.v7.min.js"></script>
+
+<script>
+  let width = 1000, height = 600; // 增大地图大小
+
+  let svg = d3.select("svg")
+      .attr("viewBox", "0 0 " + width + " " + height);
+
+  let tooltip = d3.select(".tooltip");
+
+  // Load data from GitHub
+  Promise.all([
+    d3.json("https://raw.githubusercontent.com/NemoFish0326/HCDIV-4/refs/heads/main/sgp.json"),
+    d3.csv("https://raw.githubusercontent.com/NemoFish0326/HCDIV-4/refs/heads/main/population2023.csv")
+  ]).then(data => {
+    let mapData = data[0].features;
+    let popData = data[1];
+
+    // Merge population data with map data
+    mapData.forEach(d => {
+      let subzone = popData.find(e => e.Subzone.toUpperCase() === d.properties.Name.toUpperCase());
+      d.popdata = subzone ? parseInt(subzone.Population) : 0;
+    });
+
+    // Define color scale with seven levels for clearer distinction
+    let colorScale = d3.scaleQuantize()
+        .domain([0, d3.max(mapData, d => d.popdata)])
+        .range(d3.schemeGreens[7]); // 使用七级颜色分级
+
+    // Map projection
+    let projection = d3.geoMercator()
+        .center([103.851959, 1.290270]) // Singapore center
+        .fitExtent([[50, 70], [950, 580]], { type: "FeatureCollection", features: mapData });
+
+    let geopath = d3.geoPath().projection(projection);
+
+    // Draw map, centered without left shift
+    svg.append("g")
+        .attr("id", "districts")
+        .selectAll("path")
+        .data(mapData)
+        .enter()
+        .append("path")
+        .attr("d", geopath)
+        .attr("stroke", "#555")
+        .attr("stroke-width", 0.5)
+        .attr("fill", d => colorScale(d.popdata))
+        .on("mouseover", function (event, d) {
+          tooltip
+            .style("display", "block")
+            .html(`<strong>${d.properties.Name}</strong><br>Population: ${d.popdata}`)
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 20) + "px");
+          d3.select(this).attr("stroke-width", 1.5).attr("stroke", "white");
+        })
+        .on("mousemove", function (event) {
+          tooltip
+            .style("left", (event.pageX + 10) + "px")
+            .style("top", (event.pageY - 20) + "px");
+        })
+        .on("mouseout", function () {
+          tooltip.style("display", "none");
+          d3.select(this).attr("stroke-width", 0.5).attr("stroke", "#555");
+        });
+
+    // Add title
+    svg.append("text")
+        .attr("x", width / 2)
+        .attr("y", 30)
+        .attr("text-anchor", "middle")
+        .attr("font-size", "30px") // 标题字体稍大
+        .attr("font-weight", "bold")
+        .attr("fill", "#39ff14") // 荧光绿色标题
+        .text("Singapore Population Density Map");
+
+    // Add legend with comments at the bottom right
+    let legend = svg.append("g")
+        .attr("transform", `translate(${width - 180}, ${height - 220})`) // 稍微上移比例尺位置
+        .attr("class", "legend-container");
+
+    let thresholds = colorScale.range().map((color, i) => ({
+      color,
+      label: colorScale.invertExtent(color)[0].toFixed(0) + " - " + colorScale.invertExtent(color)[1].toFixed(0)
+    }));
+
+    thresholds.forEach((threshold, i) => {
+      let legendBox = legend.append("g").attr("class", "legend-box").attr("transform", `translate(0, ${i * 22})`); // 放大间距
+
+      legendBox.append("rect")
+        .attr("width", 15)
+        .attr("height", 15)
+        .attr("fill", threshold.color);
+
+      legendBox.append("text")
+        .attr("x", 20)
+        .attr("y", 12)
+        .text(threshold.label)
+        .attr("font-size", "11px"); // 缩小比例尺文字
+    });
+
+    // Add legend title
+    svg.append("text")
+        .attr("x", width - 160)
+        .attr("y", height - 240)
+        .attr("font-size", "13px")
+        .attr("text-anchor", "middle")
+        .text("Population Range");
+  }).catch(err => {
+    console.error("Error loading files:", err);
+  });
+</script>
+</body>
+</html>
